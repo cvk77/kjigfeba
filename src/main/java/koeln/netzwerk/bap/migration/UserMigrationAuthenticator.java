@@ -1,5 +1,6 @@
 package koeln.netzwerk.bap.migration;
 
+import io.agroal.api.AgroalDataSource;
 import org.jboss.logging.Logger;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.Authenticator;
@@ -8,8 +9,8 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 
+import javax.sql.DataSource;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -18,6 +19,11 @@ import java.util.Map;
 public class UserMigrationAuthenticator implements Authenticator {
 
     private static final Logger logger = Logger.getLogger(UserMigrationAuthenticator.class);
+    private final UserMigrationAuthenticatorFactory factory;
+
+    public UserMigrationAuthenticator(UserMigrationAuthenticatorFactory factory) {
+        this.factory = factory;
+    }
 
     @Override
     public void authenticate(AuthenticationFlowContext context) {
@@ -38,12 +44,12 @@ public class UserMigrationAuthenticator implements Authenticator {
         String username = user.getUsername();
 
         try {
-            if (isMigrated(config, username)) {
+            if (isMigrated(configModel, username)) {
                 logger.infof("User %s is already migrated.", username);
                 context.success();
             } else {
                 logger.infof("User %s not migrated. Starting migration...", username);
-                performMigration(config, username);
+                performMigration(configModel, username);
                 logger.infof("Migration finished for user %s.", username);
                 context.success();
             }
@@ -56,18 +62,16 @@ public class UserMigrationAuthenticator implements Authenticator {
         }
     }
 
-    private boolean isMigrated(Map<String, String> config, String username) throws SQLException {
-        String url = config.get(UserMigrationAuthenticatorFactory.TOYA_DB_URL);
-        String user = config.get(UserMigrationAuthenticatorFactory.TOYA_DB_USER);
-        String pass = config.get(UserMigrationAuthenticatorFactory.TOYA_DB_PASSWORD);
+    private boolean isMigrated(AuthenticatorConfigModel config, String username) throws SQLException {
+        DataSource ds = factory.getToyaDataSource(config);
 
-        if (url == null || url.isEmpty()) {
-            logger.warn("Toya DB URL not configured.");
+        if (ds == null) {
+            logger.warn("Toya DB not configured or failed to initialize.");
             return true; // Assume migrated to avoid loops if misconfigured
         }
 
         // Check if user exists in Oracle (Toya)
-        try (Connection conn = DriverManager.getConnection(url, user, pass)) {
+        try (Connection conn = ds.getConnection()) {
             String query = "SELECT count(*) FROM users WHERE username = ?";
             try (PreparedStatement stmt = conn.prepareStatement(query)) {
                 stmt.setString(1, username);
@@ -81,20 +85,20 @@ public class UserMigrationAuthenticator implements Authenticator {
         return false;
     }
 
-    private void performMigration(Map<String, String> config, String username) throws SQLException {
-        String tenantUrl = config.get(UserMigrationAuthenticatorFactory.TENANT_DB_URL);
-        String tenantUser = config.get(UserMigrationAuthenticatorFactory.TENANT_DB_USER);
-        String tenantPass = config.get(UserMigrationAuthenticatorFactory.TENANT_DB_PASSWORD);
-        
-        String toyaUrl = config.get(UserMigrationAuthenticatorFactory.TOYA_DB_URL);
-        String toyaUser = config.get(UserMigrationAuthenticatorFactory.TOYA_DB_USER);
-        String toyaPass = config.get(UserMigrationAuthenticatorFactory.TOYA_DB_PASSWORD);
+    private void performMigration(AuthenticatorConfigModel config, String username) throws SQLException {
+        AgroalDataSource tenantDs = factory.getTenantDataSource(config);
+        AgroalDataSource toyaDs = factory.getToyaDataSource(config);
+
+        if (tenantDs == null || toyaDs == null) {
+            logger.warn("Databases not configured correctly. Skipping migration logic placeholder.");
+            return;
+        }
 
         // Placeholder for migration logic as requested
-        logger.infof("Fetching user %s from Informix at %s and creating in Oracle at %s", username, tenantUrl, toyaUrl);
+        logger.infof("Migration context prepared for user %s using pooled connections.", username);
         
         // No implementation for migration yet as requested.
-        // In a real scenario, you'd connect to Informix, get data, and insert into Oracle.
+        // In a real scenario, you'd use tenantDs.getConnection() and toyaDs.getConnection().
     }
 
     @Override
