@@ -70,19 +70,16 @@ public class UserMigrationAuthenticator implements Authenticator {
             return true; // Assume migrated to avoid loops if misconfigured
         }
 
-        // Check if user exists in Oracle (Toya)
+        // Optimization: Use ROWNUM = 1 to stop after the first match
         try (Connection conn = ds.getConnection()) {
-            String query = "SELECT count(*) FROM users WHERE username = ?";
+            String query = "SELECT 1 FROM users WHERE username = ? AND ROWNUM = 1";
             try (PreparedStatement stmt = conn.prepareStatement(query)) {
                 stmt.setString(1, username);
                 try (ResultSet rs = stmt.executeQuery()) {
-                    if (rs.next()) {
-                        return rs.getInt(1) > 0;
-                    }
+                    return rs.next();
                 }
             }
         }
-        return false;
     }
 
     private void performMigration(AuthenticatorConfigModel config, String username) throws SQLException {
@@ -96,9 +93,10 @@ public class UserMigrationAuthenticator implements Authenticator {
 
         // Placeholder for migration logic as requested
         logger.infof("Migration context prepared for user %s using pooled connections.", username);
-        
-        // No implementation for migration yet as requested.
-        // In a real scenario, you'd use tenantDs.getConnection() and toyaDs.getConnection().
+
+        // Load actual roles from tenant database
+        // Load default salesperson permissio
+
     }
 
     @Override

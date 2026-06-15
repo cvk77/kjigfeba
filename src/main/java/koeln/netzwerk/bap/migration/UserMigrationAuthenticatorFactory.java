@@ -1,10 +1,8 @@
 package koeln.netzwerk.bap.migration;
 
+import de.toyotafinance.keycloak.spi.user.database.DataSourceManager;
+import de.toyotafinance.keycloak.spi.user.database.DatabaseConfig;
 import io.agroal.api.AgroalDataSource;
-import io.agroal.api.configuration.AgroalDataSourceConfiguration;
-import io.agroal.api.configuration.builder.AgroalDataSourceConfigurationBuilder;
-import io.agroal.api.security.NamePrincipal;
-import io.agroal.api.security.SimplePasswordMask;
 import org.jboss.logging.Logger;
 import org.keycloak.Config;
 import org.keycloak.authentication.Authenticator;
@@ -15,20 +13,15 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.provider.ProviderConfigProperty;
 
-import java.sql.SQLException;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 public class UserMigrationAuthenticatorFactory implements AuthenticatorFactory {
 
     public static final String PROVIDER_ID = "user-migration-authenticator";
 
     private static final Logger logger = Logger.getLogger(UserMigrationAuthenticatorFactory.class);
-
-    private final Map<String, AgroalDataSource> dataSources = new ConcurrentHashMap<>();
     
     public static final String TENANT_DB_URL = "tenantDbUrl";
     public static final String TENANT_DB_USER = "tenantDbUser";
@@ -128,45 +121,20 @@ public class UserMigrationAuthenticatorFactory implements AuthenticatorFactory {
     }
 
     public AgroalDataSource getTenantDataSource(AuthenticatorConfigModel config) {
-        return getOrCreateDataSource(config, "tenant", TENANT_DB_URL, TENANT_DB_USER, TENANT_DB_PASSWORD);
+        return getDataSource(config, TENANT_DB_URL, TENANT_DB_USER, TENANT_DB_PASSWORD);
     }
 
     public AgroalDataSource getToyaDataSource(AuthenticatorConfigModel config) {
-        return getOrCreateDataSource(config, "toya", TOYA_DB_URL, TOYA_DB_USER, TOYA_DB_PASSWORD);
+        return getDataSource(config, TOYA_DB_URL, TOYA_DB_USER, TOYA_DB_PASSWORD);
     }
 
-    private AgroalDataSource getOrCreateDataSource(AuthenticatorConfigModel configModel, String prefix, String urlKey, String userKey, String passKey) {
+    private AgroalDataSource getDataSource(AuthenticatorConfigModel configModel, String urlKey, String userKey, String passKey) {
         Map<String, String> config = configModel.getConfig();
-        String url = config.get(urlKey);
-        String user = config.get(userKey);
-        String password = config.get(passKey);
-
-        if (url == null || url.isEmpty()) {
+        if (config.get(urlKey) == null || config.get(urlKey).isEmpty()) {
             return null;
         }
-
-        String dsKey = configModel.getId() + "-" + prefix;
-        return dataSources.computeIfAbsent(dsKey, k -> {
-            try {
-                logger.infof("Initializing Agroal connection pool for %s at %s", prefix, url);
-                AgroalDataSourceConfigurationBuilder builder = AgroalDataSourceConfiguration.builder()
-                        .connectionPoolConfiguration(cp -> cp
-                                .minSize(1)
-                                .maxSize(10)
-                                .initialSize(1)
-                                .maxLifetime(Duration.ofMinutes(30))
-                                .connectionFactoryConfiguration(cf -> cf
-                                        .jdbcUrl(url)
-                                        .principal(new NamePrincipal(user))
-                                        .credential(new SimplePasswordMask(password))
-                                )
-                        );
-                return AgroalDataSource.from(builder.build());
-            } catch (SQLException e) {
-                logger.errorf(e, "Failed to initialize Agroal data source for %s", prefix);
-                throw new RuntimeException("Failed to initialize database connection pool", e);
-            }
-        });
+        DatabaseConfig dbConfig = DatabaseConfig.fromMap(config, urlKey, userKey, passKey);
+        return DataSourceManager.getOrCreateDataSource(dbConfig);
     }
 
     @Override
@@ -179,15 +147,8 @@ public class UserMigrationAuthenticatorFactory implements AuthenticatorFactory {
 
     @Override
     public void close() {
-        logger.info("Closing all Agroal data sources for UserMigrationAuthenticator");
-        dataSources.values().forEach(ds -> {
-            try {
-                ds.close();
-            } catch (Exception e) {
-                logger.warn("Error closing data source", e);
-            }
-        });
-        dataSources.clear();
+        logger.info("Closing all Agroal data sources via DataSourceManager");
+        DataSourceManager.closeAll();
     }
 
     @Override
