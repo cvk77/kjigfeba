@@ -18,7 +18,7 @@ public record DatabaseConfig(
 
         int min = Integer.parseInt(config.getOrDefault("minPoolSize", "1"));
         int max = Integer.parseInt(config.getOrDefault("maxPoolSize", "10"));
-        
+
         // Keycloak config values are always strings. Safely parse timeout.
         String timeoutStr = config.getOrDefault("acquisitionTimeout", "30");
         Duration timeout = Duration.ofSeconds(Long.parseLong(timeoutStr));

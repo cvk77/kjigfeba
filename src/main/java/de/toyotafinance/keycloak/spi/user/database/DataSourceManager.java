@@ -45,7 +45,7 @@ public class DataSourceManager {
 	 * @history	bcvkrue; 27.01.2026; Anlage. DW-8266
 	 */
 	public static AgroalDataSource getOrCreateDataSource(Map<String, String> configMap) {
-		var config = DatabaseConfig.fromMap(configMap);
+		var config = DatabaseConfig.fromMap(configMap, "jdbcUrl", "username", "password");
 		return getOrCreateDataSource(config);
 	}
 
